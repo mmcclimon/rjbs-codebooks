@@ -1,29 +1,17 @@
 type RenderContext = CanvasRenderingContext2D;
+type Action = 'move' | 'wait' | 'attack';
 
 interface Widget {
   render: (renderer: GameRenderer, ctx: RenderContext) => void;
 };
 
-interface State {
-  random: string;
-  found: string;
-};
-
-interface Cell {
-  x: number;
-  y: number;
-  contents: Mob | null;
-}
-
-enum Action {
-  move,
-  wait,
-  attack
-}
-
 interface Drawable {
   x: number;
   y: number;
+}
+
+interface Cell extends Drawable {
+  contents: Mob | null;
 }
 
 // properly: union type instead of these options
@@ -57,7 +45,7 @@ class TextSpinner {
     this.hidden  = new Set( this.chars.keys() );
   }
 
-  nextStringState (): State {
+  nextStringState (): { random: string, found: string } {
     if (this.hidden.size == 0) return { random: "", found: this.target };
 
     const randInt   = i => Math.floor( Math.random() * i );
@@ -65,7 +53,7 @@ class TextSpinner {
 
     if (Math.random() > 0.98) this.hidden.delete( getRandom(this.hidden) );
 
-    let state: State = { random: '', found: ''};
+    let state = { random: null, found: null };
     state.random = this.chars.map(
       (c, i) => this.hidden.has(i)
                 ? this.pick[ randInt(this.pick.length) ]
@@ -185,7 +173,7 @@ abstract class Mob implements Drawable {
       { x: this.x + 0, y: this.y + 1 },
       { x: this.x + 0, y: this.y - 1 },
       { x: this.x + 1, y: this.y + 0 }
-    ].map(m => Object({ action: Action.move, x: m.x, y: m.y, cell: this.game.cellInfo(m.x, m.y) }))
+    ].map(m => Object({ action: 'move', x: m.x, y: m.y, cell: this.game.cellInfo(m.x, m.y) }))
      .filter(option => option.cell !== null);
   }
 
@@ -195,14 +183,14 @@ abstract class Mob implements Drawable {
     // TODO make this a generic "action" kind of thinger?
     const move = this.pickMove();
 
-    if (move.action === Action.wait) return;
+    if (move.action === 'wait') return;
 
-    if (move.action === Action.attack) {
+    if (move.action === 'attack') {
       this.game.player.takeDamage(1);
       return;
     }
 
-    if (move.action === Action.move) {
+    if (move.action === 'move') {
       // XXX the only reason for the first check is that sometimes we cheat and
       // return x,y with no cell; is that okay? who knows.
       if (move.cell && move.cell.contents) {
@@ -233,13 +221,13 @@ class Roamer extends Mob {
 
   pickMove (): Move {
     const moves = this.moveOptions();
-    moves.push({ x: this.x, y: this.y, action: Action.move });
+    moves.push({ x: this.x, y: this.y, action: 'move' });
     return moves[ Math.floor( moves.length * Math.random() ) ];
   }
 };
 
 class Seeker extends Mob {
-  type: string;
+  type: 'even' | 'odd';
 
   constructor (game, x, y) {
     super(game, x, y);
@@ -251,8 +239,9 @@ class Seeker extends Mob {
     const game = this.game;
 
     const isEven = this.type === 'even';
-    if (this.type === 'even' && ! (game.turn % 2 == 0)) {
-      return { action: Action.wait };
+    const isOddTurn = game.turn % 2 !== 0;
+    if (isEven !== isOddTurn) {
+      return { action: 'wait' };
     }
 
     const moves = this.moveOptions();
@@ -279,7 +268,8 @@ class Seeker extends Mob {
   render (grender, ctx) {
     const red = 128 + Math.floor(grender.renderer.tick / 1) % 128;
     const isEven = this.type === 'even';
-    ctx.fillStyle = isEven && this.game.turn % 2 == 0
+    const isOddTurn = this.game.turn % 2 !== 0;
+    ctx.fillStyle = isEven !== isOddTurn
                   ? `rgb(${red}, 0, 0)`
                   : '#888';
 
@@ -312,7 +302,7 @@ class Zapper extends Mob {
 
     if (this.gotMoved) {
       this.gotMoved = false;
-      return { action: Action.wait };
+      return { action: 'wait' };
     }
 
     const possibleAllies = [];
@@ -347,16 +337,20 @@ class Zapper extends Mob {
       const ally = possibleAllies[ Math.floor( possibleAllies.length * Math.random() ) ];
       ally.gotMoved = true;
       this.didMove  = true;
-      return { action: Action.attack };
+      return { action: 'attack' };
     }
 
     // TODO: move to get into straight line with player
     const moves = this.moveOptions();
-    moves.push({ action: Action.wait });
+    moves.push({ action: 'wait' });
     this.didMove = true;
     return moves[ Math.floor( moves.length * Math.random() ) ];
   }
 };
+
+type GameActionMove = { move: Drawable };
+type GameActionNoop = { noop: null };
+type GameAction = GameActionMove | GameActionNoop;
 
 class SixEightyEight {
   width: number;
@@ -458,14 +452,12 @@ class SixEightyEight {
     }
   }
 
-  takeTurn (action): void {
-    if (action.move) {
-      this.moveMob(this.player, action.move);
+  takeTurn (action: GameAction): void {
+    if ('move' in action) {
+      this.moveMob(this.player, { ...action.move, action: 'move' });
     }
 
-    for (let i = 0; i < this.mobs.length; i++) {
-      const mob = this.mobs[i];
-
+    for (const mob of this.mobs) {
       if (mob.x == this.player.x && mob.y == this.player.y) {
         console.log("It dead.");
         mob.isDead = true;
