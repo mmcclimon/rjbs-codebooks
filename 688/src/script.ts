@@ -1,14 +1,38 @@
 type RenderContext = CanvasRenderingContext2D;
 
+interface Widget {
+  render: (renderer: GameRenderer, ctx: RenderContext) => void;
+};
+
 interface State {
   random: string;
   found: string;
 };
 
-interface Widget {
-  render: (renderer: GameRenderer, ctx: RenderContext) => void;
-};
+interface Cell {
+  x: number;
+  y: number;
+  contents: Mob | null;
+}
 
+enum Action {
+  move,
+  wait,
+  attack
+}
+
+interface Drawable {
+  x: number;
+  y: number;
+}
+
+// properly: union type instead of these options
+interface Move {
+  action: Action;
+  x?: number;
+  y?: number;
+  cell?: Cell;
+};
 
 class TextSpinner {
   pick: Array<string>;
@@ -17,7 +41,7 @@ class TextSpinner {
   chars: Array<string>;
   hidden: Set<number>;
 
-  constructor (canvas, text: string) {
+  constructor (canvas: HTMLCanvasElement, text: string) {
     this.pick = ("0123456789"
               + "abcdefghijklmnopqrstuvwxyz"
               + "ABCDEFGHIJKLMNOPQRSTUVWXYZ").split('');
@@ -33,7 +57,7 @@ class TextSpinner {
     this.hidden  = new Set( this.chars.keys() );
   }
 
-  nextStringState () {
+  nextStringState (): State {
     if (this.hidden.size == 0) return { random: "", found: this.target };
 
     const randInt   = i => Math.floor( Math.random() * i );
@@ -55,7 +79,7 @@ class TextSpinner {
     return state;
   }
 
-  render (renderer, ctx) {
+  render (renderer: GameRenderer, ctx: RenderContext): void {
     // The Scrambler
     let stringState = this.nextStringState();
 
@@ -75,7 +99,7 @@ class WubWubLine {
   constructor () {
   }
 
-  render (renderer, ctx) {
+  render (renderer: GameRenderer, ctx: RenderContext): void {
     // The Wonky Blue Line
     ctx.beginPath();
     ctx.strokeStyle = 'blue';
@@ -94,7 +118,7 @@ class TurnCount {
   constructor () {
   }
 
-  render (renderer, ctx) {
+  render (renderer: GameRenderer, ctx: RenderContext): void {
     // Turn Count
     ctx.font = '24px monospace';
     ctx.fillStyle = 'blue';
@@ -106,7 +130,7 @@ class HealthBar {
   constructor () {
   }
 
-  render (renderer, ctx) {
+  render (renderer: GameRenderer, ctx: RenderContext): void {
     ctx.translate(10, 475);
     for (let x = 0; x < renderer.game.player.maxHealth; x += 1) {
       ctx.fillStyle = renderer.game.player.health > x ? 'red' : 'grey';
@@ -125,12 +149,12 @@ class MyAnimation {
     Object.assign(this, param);
   }
 
-  render (grender: GameRenderer, ctx: RenderContext) {
+  render (grender: GameRenderer, ctx: RenderContext): void {
     this.draw.call(this, grender, ctx);
   }
 }
 
-abstract class Mob {
+abstract class Mob implements Drawable {
   game: SixEightyEight;
   x: number;
   y: number;
@@ -144,43 +168,41 @@ abstract class Mob {
     this.y = y;
   }
 
-  angleToPlayer () {
+  angleToPlayer (): number {
     const xOffset = this.x - this.game.player.x;
     const yOffset = this.y - this.game.player.y;
 
     return( 2*Math.PI - Math.atan2(xOffset, yOffset));
   }
 
-  render (grender, ctx) {
-    throw ".render() called on abstract Mob";
-  }
+  abstract render (grender: GameRenderer, ctx: RenderContext): void;
 
-  moveOptions () {
+  abstract pickMove (): Move;
+
+  moveOptions (): Array<Move> {
     return [
       { x: this.x - 1, y: this.y + 0 },
       { x: this.x + 0, y: this.y + 1 },
       { x: this.x + 0, y: this.y - 1 },
       { x: this.x + 1, y: this.y + 0 }
-    ].map(m => Object({ action: 'move', x: m.x, y: m.y, cell: this.game.cellInfo(m.x, m.y) }))
+    ].map(m => Object({ action: Action.move, x: m.x, y: m.y, cell: this.game.cellInfo(m.x, m.y) }))
      .filter(option => option.cell !== null);
   }
 
-  abstract pickMove ();
-
-  takeTurn () {
+  takeTurn (): void {
     if (this.isDead) return;
 
     // TODO make this a generic "action" kind of thinger?
     const move = this.pickMove();
 
-    if (move.action === 'wait') return;
+    if (move.action === Action.wait) return;
 
-    if (move.action === 'attack') {
+    if (move.action === Action.attack) {
       this.game.player.takeDamage(1);
       return;
     }
 
-    if (move.action === 'move') {
+    if (move.action === Action.move) {
       // XXX the only reason for the first check is that sometimes we cheat and
       // return x,y with no cell; is that okay? who knows.
       if (move.cell && move.cell.contents) {
@@ -198,7 +220,8 @@ abstract class Mob {
 }
 
 class Roamer extends Mob {
-  render (grender, ctx) {
+  // XXX figure out what to do here
+  render (grender, ctx: RenderContext) {
     ctx.fillStyle = 'blue';
     grender.drawGridCircle(this, ctx);
 
@@ -208,9 +231,9 @@ class Roamer extends Mob {
     // grender.drawGridTriangle(this, ctx);
   }
 
-  pickMove () {
+  pickMove (): Move {
     const moves = this.moveOptions();
-    moves.push({ x: this.x, y: this.y });
+    moves.push({ x: this.x, y: this.y, action: Action.move });
     return moves[ Math.floor( moves.length * Math.random() ) ];
   }
 };
@@ -224,12 +247,12 @@ class Seeker extends Mob {
     this.type = Math.random() > 0.5 ? 'even' : 'odd';
   }
 
-  pickMove () {
+  pickMove (): Move {
     const game = this.game;
 
     const isEven = this.type === 'even';
     if (this.type === 'even' && ! (game.turn % 2 == 0)) {
-      return { action: 'wait' };
+      return { action: Action.wait };
     }
 
     const moves = this.moveOptions();
@@ -278,7 +301,7 @@ class Zapper extends Mob {
     ctx.fillRect(-2, -radius, 5, 1+2*radius);
   }
 
-  pickMove () {
+  pickMove (): Move {
     // Given the following positions:   Z   P   Z   Z
     // ...we don't want the player to be attacked twice.  Assuming the leftmost
     // zapper goes first, and enlists the second as its ally, then the second
@@ -289,7 +312,7 @@ class Zapper extends Mob {
 
     if (this.gotMoved) {
       this.gotMoved = false;
-      return { action: 'wait' };
+      return { action: Action.wait };
     }
 
     const possibleAllies = [];
@@ -324,12 +347,12 @@ class Zapper extends Mob {
       const ally = possibleAllies[ Math.floor( possibleAllies.length * Math.random() ) ];
       ally.gotMoved = true;
       this.didMove  = true;
-      return { action: 'attack' };
+      return { action: Action.attack };
     }
 
     // TODO: move to get into straight line with player
     const moves = this.moveOptions();
-    moves.push({ action: 'wait' });
+    moves.push({ action: Action.wait });
     this.didMove = true;
     return moves[ Math.floor( moves.length * Math.random() ) ];
   }
@@ -376,7 +399,7 @@ class SixEightyEight {
     document.addEventListener("keyup", this.actionListener);
   }
 
-  gameOver () {
+  gameOver (): void {
     document.removeEventListener('keyup', this.actionListener);
 
     let ani = new MyAnimation({
@@ -393,12 +416,12 @@ class SixEightyEight {
     this.animations.push(ani);
   }
 
-  addRandomMob() {
+  addRandomMob(): void {
     const mobTypes = [ Roamer, Seeker, Zapper ];
-    const type = mobTypes[ Math.floor( Math.random() * mobTypes.length ) ];
+    const whichType = mobTypes[ Math.floor( Math.random() * mobTypes.length ) ];
 
     // FIXME this allows double-occupied cells -- rjbs, 2019-08-18
-    let newMob = new type(
+    let newMob = new whichType(
       this,
       Math.floor( Math.random() * this.width ),
       Math.floor( Math.random() * this.height ),
@@ -407,7 +430,7 @@ class SixEightyEight {
     this.mobs.push(newMob);
   }
 
-  cellInfo (x: number, y: number) {
+  cellInfo (x: number, y: number): Cell {
     if (x < 0 || x >= this.width)  return null;
     if (y < 0 || y >= this.height) return null;
 
@@ -423,7 +446,7 @@ class SixEightyEight {
     return cellInfo;
   }
 
-  moveMob (mob, move) {
+  moveMob (mob: Drawable, move: Move): void {
     const newX = mob.x + move.x;
     const newY = mob.y + move.y;
 
@@ -435,7 +458,7 @@ class SixEightyEight {
     }
   }
 
-  takeTurn(action) {
+  takeTurn (action): void {
     if (action.move) {
       this.moveMob(this.player, action.move);
     }
@@ -481,7 +504,7 @@ class SixEightyEight {
   }
 };
 
-class Player {
+class Player implements Drawable {
   x: number;
   y: number;
   maxHealth: number;
