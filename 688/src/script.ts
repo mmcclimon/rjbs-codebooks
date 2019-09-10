@@ -1,7 +1,14 @@
+type RenderContext = CanvasRenderingContext2D;
+
 interface State {
   random: string;
   found: string;
 };
+
+interface Widget {
+  render: (renderer: GameRenderer, ctx: RenderContext) => void;
+};
+
 
 class TextSpinner {
   pick: Array<string>;
@@ -109,13 +116,16 @@ class HealthBar {
 }
 
 class MyAnimation {
-  draw: any;
+  draw: (GameRenderer, RenderContext) => void;
+  isDone?: boolean;   // not _really_. These are created willy-nilly, and
+                      // the "correct" way is to subtype these.
 
+  // not super type-friendly
   constructor (param) {
     Object.assign(this, param);
   }
 
-  render (grender, ctx) {
+  render (grender: GameRenderer, ctx: RenderContext) {
     this.draw.call(this, grender, ctx);
   }
 }
@@ -330,9 +340,9 @@ class SixEightyEight {
   height: number;
   turn: number;
   player: Player;
-  mobs: Array<any>;
-  animations: Array<any>;
-  actionListener: any;  // meh
+  mobs: Array<Mob>;
+  animations: Array<MyAnimation>;
+  actionListener: (KeyboardEvent) => void;
 
   constructor () {
     this.width  = 20;
@@ -455,7 +465,7 @@ class SixEightyEight {
         this.animations.push(ani);
       }
 
-      mob.takeTurn(this);
+      mob.takeTurn();
 
       if (this.player.health <= 0) break;
     }
@@ -667,7 +677,7 @@ class GameRenderer {
   game: SixEightyEight;
   canvas: HTMLCanvasElement;
   tick: number;
-  widgets: Array<any>;
+  widgets: Array<Widget>;
   gridRenderer: GridRenderer;
 
 
