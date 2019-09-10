@@ -1,7 +1,10 @@
 {
     "compilerOptions": {
+        "lib": [ "ES6", "DOM" ],
+        "target": "ES6",
         "outDir": "./out",
-        "allowJs": true
+        "allowJs": true,
+        "sourceMap": true
     },
     "include": [
         "./src/**/*"

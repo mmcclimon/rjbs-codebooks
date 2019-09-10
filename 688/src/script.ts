@@ -1,5 +1,16 @@
-const TextSpinner = class {
-  constructor (canvas, text) {
+interface State {
+  random: string;
+  found: string;
+};
+
+class TextSpinner {
+  pick: Array<string>;
+  width: number;
+  target: string;
+  chars: Array<string>;
+  hidden: Set<number>;
+
+  constructor (canvas, text: string) {
     this.pick = ("0123456789"
               + "abcdefghijklmnopqrstuvwxyz"
               + "ABCDEFGHIJKLMNOPQRSTUVWXYZ").split('');
@@ -23,7 +34,7 @@ const TextSpinner = class {
 
     if (Math.random() > 0.98) this.hidden.delete( getRandom(this.hidden) );
 
-    let state = {};
+    let state: State = { random: '', found: ''};
     state.random = this.chars.map(
       (c, i) => this.hidden.has(i)
                 ? this.pick[ randInt(this.pick.length) ]
@@ -53,7 +64,7 @@ const TextSpinner = class {
   }
 };
 
-const WubWubLine = class {
+class WubWubLine {
   constructor () {
   }
 
@@ -72,7 +83,7 @@ const WubWubLine = class {
   }
 }
 
-const TurnCount = class {
+class TurnCount {
   constructor () {
   }
 
@@ -84,7 +95,7 @@ const TurnCount = class {
   }
 }
 
-const HealthBar = class {
+class HealthBar {
   constructor () {
   }
 
@@ -97,7 +108,9 @@ const HealthBar = class {
   }
 }
 
-const Animation = class {
+class MyAnimation {
+  draw: any;
+
   constructor (param) {
     Object.assign(this, param);
   }
@@ -107,7 +120,14 @@ const Animation = class {
   }
 }
 
-const Mob = class {
+abstract class Mob {
+  game: SixEightyEight;
+  x: number;
+  y: number;
+  isDead: boolean;
+  didMove: boolean;
+  gotMoved: boolean;
+
   constructor (game, x, y) {
     this.game = game;
     this.x = x;
@@ -135,15 +155,13 @@ const Mob = class {
      .filter(option => option.cell !== null);
   }
 
-  pickMove () {
-    throw ".pickMove() called on abstract Mob";
-  }
+  abstract pickMove ();
 
   takeTurn () {
     if (this.isDead) return;
 
     // TODO make this a generic "action" kind of thinger?
-    const move = this.pickMove(this.game);
+    const move = this.pickMove();
 
     if (move.action === 'wait') return;
 
@@ -169,7 +187,7 @@ const Mob = class {
   }
 }
 
-const Roamer = class extends Mob {
+class Roamer extends Mob {
   render (grender, ctx) {
     ctx.fillStyle = 'blue';
     grender.drawGridCircle(this, ctx);
@@ -187,7 +205,9 @@ const Roamer = class extends Mob {
   }
 };
 
-const Seeker = class extends Mob {
+class Seeker extends Mob {
+  type: string;
+
   constructor (game, x, y) {
     super(game, x, y);
 
@@ -197,11 +217,12 @@ const Seeker = class extends Mob {
   pickMove () {
     const game = this.game;
 
-    if (this.type == 'even' ^ game.turn % 2 != 0) {
+    const isEven = this.type === 'even';
+    if (this.type === 'even' && ! (game.turn % 2 == 0)) {
       return { action: 'wait' };
     }
 
-    const moves = this.moveOptions(game);
+    const moves = this.moveOptions();
 
     const attacks = moves.filter(
       m => m.cell.contents && m.cell.contents instanceof Player
@@ -224,16 +245,17 @@ const Seeker = class extends Mob {
 
   render (grender, ctx) {
     const red = 128 + Math.floor(grender.renderer.tick / 1) % 128;
-    ctx.fillStyle = this.type == 'even' ^ this.game.turn % 2 == 0
+    const isEven = this.type === 'even';
+    ctx.fillStyle = isEven && this.game.turn % 2 == 0
                   ? `rgb(${red}, 0, 0)`
                   : '#888';
 
-    ctx.rotate(this.angleToPlayer(this.game));
+    ctx.rotate(this.angleToPlayer());
     grender.drawGridTriangle(this, ctx);
   }
 };
 
-const Zapper = class extends Mob {
+class Zapper extends Mob {
   render (grender, ctx) {
     ctx.fillStyle = '#ee0';
     ctx.strokeStyle = '#303';
@@ -264,7 +286,7 @@ const Zapper = class extends Mob {
     const player = this.game.player;
 
     for (const mob of this.game.mobs) {
-      if ( ! mob instanceof Zapper) continue;
+      if ( ! (mob instanceof Zapper) ) continue;
       if (mob.didMove || mob.gotMoved) continue;
 
       if ( mob.x == this.x
@@ -303,7 +325,15 @@ const Zapper = class extends Mob {
   }
 };
 
-const SixEightyEight = class {
+class SixEightyEight {
+  width: number;
+  height: number;
+  turn: number;
+  player: Player;
+  mobs: Array<any>;
+  animations: Array<any>;
+  actionListener: any;  // meh
+
   constructor () {
     this.width  = 20;
     this.height = 16;
@@ -316,7 +346,7 @@ const SixEightyEight = class {
 
     this.animations = [];
 
-    this.actionListener = event => {
+    this.actionListener = (event: KeyboardEvent) => {
       const code = event.code;
       const player = this.player;
 
@@ -339,7 +369,7 @@ const SixEightyEight = class {
   gameOver () {
     document.removeEventListener('keyup', this.actionListener);
 
-    let ani = new Animation({
+    let ani = new MyAnimation({
       draw: function (grender, ctx) {
         ctx.strokeStyle = '#c0c';
 
@@ -367,11 +397,11 @@ const SixEightyEight = class {
     this.mobs.push(newMob);
   }
 
-  cellInfo (x, y) {
+  cellInfo (x: number, y: number) {
     if (x < 0 || x >= this.width)  return null;
     if (y < 0 || y >= this.height) return null;
 
-    let cellInfo = { x: y, y: y };
+    let cellInfo = { x: y, y: y, contents: null };
 
     if (this.player.x === x && this.player.y === y) {
       cellInfo.contents = this.player;
@@ -407,7 +437,7 @@ const SixEightyEight = class {
         console.log("It dead.");
         mob.isDead = true;
 
-        let ani = new Animation({
+        let ani = new MyAnimation({
           x: mob.x,
           y: mob.y,
           d: 0,
@@ -441,7 +471,13 @@ const SixEightyEight = class {
   }
 };
 
-const Player = class {
+class Player {
+  x: number;
+  y: number;
+  maxHealth: number;
+  health: number;
+  game: SixEightyEight;
+
   constructor (game) {
     this.x = Math.floor( Math.random() * game.width );
     this.y = Math.floor( Math.random() * game.height );
@@ -460,7 +496,7 @@ const Player = class {
   takeDamage (n) {
     this.health = Math.max(0, this.health - n);
 
-    let ani = new Animation({
+    let ani = new MyAnimation({
       x: this.x,
       y: this.y,
       d: 0,
@@ -481,7 +517,18 @@ const Player = class {
   }
 }
 
-const GridRenderer = class {
+class GridRenderer {
+  renderer: GameRenderer;
+
+  cellSide: number;
+  cellRadius: number;
+  height: number;
+  width: number;
+  x1: number;
+  x2: number;
+  y1: number;
+  y2: number;
+
   constructor (renderer, x1, y1, x2, y2) {
     // So, we got a bounding rectangle, and we know how many grid cells we need
     // it to be both tall and wide.  We want each cell to be a square, so we
@@ -576,6 +623,10 @@ const GridRenderer = class {
     let rect = {
       x1: this.x1 + gridX * this.cellSide,
       y1: this.y1 + gridY * this.cellSide,
+      x2: null,
+      y2: null,
+      xmid: null,
+      ymid: null,
     };
 
     rect.x2 = rect.x1 + this.cellSide - 1;
@@ -612,7 +663,14 @@ const GridRenderer = class {
   }
 }
 
-const GameRenderer = class {
+class GameRenderer {
+  game: SixEightyEight;
+  canvas: HTMLCanvasElement;
+  tick: number;
+  widgets: Array<any>;
+  gridRenderer: GridRenderer;
+
+
   constructor (game, canvas) {
     // Consider barfing if canvas not square.
     this.game   = game;
@@ -647,8 +705,9 @@ const GameRenderer = class {
 
   draw() {
     this.tick++;
+    const canvas = this.canvas;
 
-    if (this.canvas.getContext) {
+    if (canvas.getContext) {
       var ctx = canvas.getContext('2d');
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
